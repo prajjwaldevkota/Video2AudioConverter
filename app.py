@@ -114,7 +114,7 @@ def quality_download_ffmpeg(youtube_url: str, audio_format: str, bitrate: str) -
     final_ext = ext_map[audio_format]
     out_file = os.path.join(DOWNLOAD_DIR, f"{title}.{final_ext}")
 
-    cmd = ["ffmpeg", "-y", "-i", raw_file, "-vn"]
+    cmd = ["ffmpeg", "-y", "-i", raw_file, "-vn", "-preset", "ultrafast",]
     if audio_format == "mp3":
         cmd += [
             "-c:a", "libmp3lame",
