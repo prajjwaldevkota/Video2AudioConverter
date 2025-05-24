@@ -131,10 +131,10 @@ export default function App() {
         <div className="text-center mb-12">
           <div className="flex items-center justify-center mb-4">
             <div className="relative">
-              <Music className="w-12 h-12 text-white mr-3" />
+              <Music className="w-12 h-12 text-white mr-3 sm:w-10 h-10" />
               <Sparkles className="w-4 h-4 text-yellow-400 absolute -top-1 -right-1 animate-pulse" />
             </div>
-            <h1 className="text-6xl font-black bg-gradient-to-r from-white via-purple-200 to-indigo-200 bg-clip-text text-transparent">
+            <h1 className="text-4xl font-black bg-gradient-to-r from-white via-purple-200 to-indigo-200 bg-clip-text text-transparent ">
               SoundScape Pro
             </h1>
           </div>
