@@ -10,6 +10,7 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
+
 def wipe_downloads(delay=1):
     """Wait `delay` seconds, then remove all files in DOWNLOAD_DIR."""
     time.sleep(delay)
@@ -19,6 +20,7 @@ def wipe_downloads(delay=1):
             os.remove(path)
         except OSError:
             pass
+
 
 DOWNLOAD_DIR = os.path.join(os.getcwd(), "downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
@@ -181,13 +183,7 @@ def search():
             "--ignore-errors",
             "--dump-json",
             "--no-playlist",
-            "--socket-timeout", "3",
-            "--source-address", "0.0.0.0",
-            "--geo-bypass",
-            "--extractor-args", "youtube:skip=webpage",
-            "--extractor-args", "youtube:max_results=5",
-            "--extractor-args", "youtube:throttled_rate=5M",
-            "--extractor-args", "youtube:player_client=android,web",
+            "--flat-playlist",
             f"ytsearch5:{q}"],
         capture_output=True, text=True, check=True
     )
@@ -244,8 +240,6 @@ def download():
         else:  # quality
             file_path, title = quality_download_ffmpeg(url, fmt, br)
 
-       
-
         mime_map = {
             "mp3": "audio/mpeg",
             "aac": "audio/aac",
@@ -254,19 +248,18 @@ def download():
             "wav": "audio/wav",
             "ogg": "audio/ogg"
         }
-        
-        response =  send_file(
+
+        response = send_file(
             file_path,
             as_attachment=True,
             download_name=f"{title}.{file_path.split('.')[-1]}",
             mimetype=mime_map.get(fmt, "application/octet-stream")
         )
-        
+
         t = threading.Thread(target=wipe_downloads, args=(1,), daemon=True)
         t.start()
-        
-        return response
 
+        return response
 
     except subprocess.CalledProcessError as e:
         app.logger.error(f"Error: {e}")
