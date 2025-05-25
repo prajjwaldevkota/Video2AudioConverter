@@ -9,8 +9,10 @@ import {
   Crown,
   Radio,
   Info,
+  AlertTriangle,
+  X,
 } from "lucide-react";
-import ErrorPage from "./error";
+import ErrorPage from "./errorPage";
 const URL = "http://localhost:5000";
 
 export default function App() {
@@ -23,48 +25,78 @@ export default function App() {
   const [downloadingVideos, setDownloadingVideos] = useState(new Set());
   const [, setAvailableFormats] = useState({});
   const [error, setError] = useState(null);
+  const [showLosslessWarning, setShowLosslessWarning] = useState(false);
+  const [pendingDownload, setPendingDownload] = useState(null);
 
   // Fetch available formats on component mount
   useEffect(() => {
     fetch(`${URL}/formats`)
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        return res.json();
+      })
       .then((data) => setAvailableFormats(data))
-      .catch((err) => setError("Error Connecting to the server. Try again later.", err));
+      .catch((err) => {
+        console.error("Error fetching formats:", err);
+        setError(
+          "Failed to connect to server. Please check your connection and try again."
+        );
+      });
   }, []);
 
+  const isLosslessFormat = (selectedFormat) => {
+    return ["alac", "flac", "wav"].includes(selectedFormat);
+  };
 
   const search = async () => {
     if (!userInput) return;
     setIsSearching(true);
-    
+    setError(null);
+
     try {
       const response = await fetch(
         `${URL}/search?query=${encodeURIComponent(userInput)}`
       );
-      console.log(response.status);
 
-      if(response.status === 404) {
+      if (response.status === 404) {
         console.error("No results found");
       }
 
       if (!response.ok) {
-        console.error("Error fetching videos:", response.statusText);
-        setError("Failed to fetch videos. Please try again.");
-        return;
+        throw new Error(`Search failed with status: ${response.status}`);
       }
       const data = await response.json();
       if (!data || !Array.isArray(data)) {
-        console.error("Invalid response data:", data);
-        setError("Invalid response data. Please try again.");
+        throw new Error("Invalid response format from server");
+      }
+      if (data.length === 0) {
+        setError("No videos found. Try searching with different terms.");
         return;
       }
       setVideos(data);
+    } catch (error) {
+      console.error("Search error:", error);
+      setError(error.message || "Search failed. Please try again.");
     } finally {
       setIsSearching(false);
     }
   };
 
   const handleDownload = async (videoUrl, videoTitle) => {
+    // Check if format is lossless and show warning
+    if (isLosslessFormat(format)) {
+      setPendingDownload({ videoUrl, videoTitle });
+      setShowLosslessWarning(true);
+      return;
+    }
+
+    // Proceed with download directly for lossy formats
+    await performDownload(videoUrl, videoTitle);
+  };
+
+  const performDownload = async (videoUrl, videoTitle) => {
     setDownloadingVideos((prev) => new Set([...prev, videoUrl]));
 
     try {
@@ -75,9 +107,7 @@ export default function App() {
       );
 
       if (!response.ok) {
-        console.error("Download failed:", response.statusText);
-        setError("Download failed. Please try again.");
-        return;
+        throw new Error(`Download failed with status: ${response.status}`);
       }
 
       // Get the filename from the Content-Disposition header if available
@@ -112,6 +142,19 @@ export default function App() {
         return newSet;
       });
     }
+  };
+
+  const handleLosslessConfirm = () => {
+    setShowLosslessWarning(false);
+    if (pendingDownload) {
+      performDownload(pendingDownload.videoUrl, pendingDownload.videoTitle);
+      setPendingDownload(null);
+    }
+  };
+
+  const handleLosslessCancel = () => {
+    setShowLosslessWarning(false);
+    setPendingDownload(null);
   };
 
   const formatDuration = (seconds) => {
@@ -176,6 +219,13 @@ export default function App() {
         message={error}
         onRetry={() => {
           setError(null);
+          // Optionally reload the page or retry the last action
+          window.location.reload();
+        }}
+        onHome={() => {
+          setError(null);
+          setVideos([]);
+          setUserInput("");
         }}
       />
     );
@@ -189,6 +239,89 @@ export default function App() {
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/20 rounded-full blur-3xl animate-pulse delay-1000"></div>
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl animate-pulse delay-500"></div>
       </div>
+
+      {/* Lossless Format Warning Modal */}
+      {showLosslessWarning && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-gradient-to-br from-orange-900/90 to-red-900/90 backdrop-blur-xl border border-orange-500/50 rounded-2xl p-8 max-w-md w-full shadow-2xl">
+            <div className="flex items-center mb-6">
+              <div className="flex-shrink-0">
+                <AlertTriangle className="w-8 h-8 text-orange-400 mr-3" />
+              </div>
+              <div>
+                <h3 className="text-xl font-bold text-white mb-1">
+                  Lossless Format Warning
+                </h3>
+                <p className="text-orange-200 text-sm">
+                  {format.toUpperCase()} format selected
+                </p>
+              </div>
+              <button
+                onClick={handleLosslessCancel}
+                className="ml-auto text-white/50 hover:text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 mb-6">
+              <div className="bg-orange-500/20 border border-orange-500/30 rounded-lg p-4">
+                <h4 className="text-white font-semibold mb-2 flex items-center">
+                  <Info className="w-4 h-4 mr-2" />
+                  What to expect:
+                </h4>
+                <ul className="text-orange-100 text-sm space-y-2">
+                  <li>
+                    • <strong>Larger file sizes:</strong> 5-10x bigger than MP3
+                  </li>
+                  <li>
+                    • <strong>Longer processing:</strong> 2-3x more time needed
+                  </li>
+                  <li>
+                    • <strong>Higher bandwidth:</strong> Slower download speeds
+                  </li>
+                  <li>
+                    • <strong>Perfect quality:</strong> No compression artifacts
+                  </li>
+                </ul>
+              </div>
+
+              <div className="text-center">
+                <p className="text-white/70 text-sm">
+                  Current selection:{" "}
+                  <span className="font-semibold text-white">
+                    {format.toUpperCase()}
+                  </span>
+                </p>
+                <p className="text-orange-200 text-xs mt-1">
+                  Estimated size:{" "}
+                  {format === "wav"
+                    ? "50-70MB"
+                    : format === "flac"
+                    ? "25-40MB"
+                    : "30-50MB"}{" "}
+                  per 5-minute song
+                </p>
+              </div>
+            </div>
+
+            <div className="flex space-x-3">
+              <button
+                onClick={handleLosslessCancel}
+                className="flex-1 px-4 py-3 bg-white/10 border border-white/20 text-white font-medium rounded-xl hover:bg-white/20 transition-all duration-300"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleLosslessConfirm}
+                className="flex-1 px-4 py-3 bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 text-white font-semibold rounded-xl shadow-lg transform hover:scale-105 transition-all duration-300"
+              >
+                Continue Download
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="relative z-10 flex flex-col items-center justify-center min-h-screen p-4 w-full">
         {/* Header */}

@@ -196,7 +196,7 @@ def search():
         out.append({
             "title": info.get("title"),
             "url":   info.get("webpage_url"),
-            "thumbnail": info.get("thumbnail"),
+            "thumbnail": info.get("thumbnail")[0].get("url"),
             "duration":  info.get("duration")
         })
     return jsonify(out)
