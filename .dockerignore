@@ -1,0 +1,11 @@
+# .dockerignore
+**/node_modules
+frontend/MP3Converter/dist
+downloads/
+venv/
+__pycache__/
+*.log
+*.tmp
+.git
+.gitignore
+Dockerfile*

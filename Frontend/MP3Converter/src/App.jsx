@@ -13,6 +13,7 @@ import {
   X,
 } from "lucide-react";
 import ErrorPage from "./errorPage";
+
 const URL = "http://localhost:5000";
 
 export default function App() {
@@ -30,7 +31,7 @@ export default function App() {
 
   // Fetch available formats on component mount
   useEffect(() => {
-    fetch(`${URL}/formats`)
+    fetch(`/formats`)
       .then((res) => {
         if (!res.ok) {
           throw new Error(`HTTP error! status: ${res.status}`);
@@ -57,7 +58,7 @@ export default function App() {
 
     try {
       const response = await fetch(
-        `${URL}/search?query=${encodeURIComponent(userInput)}`
+        `/search?query=${encodeURIComponent(userInput)}`
       );
 
       if (response.status === 404) {
@@ -101,7 +102,7 @@ export default function App() {
 
     try {
       const response = await fetch(
-        `${URL}/download?url=${encodeURIComponent(
+        `/download?url=${encodeURIComponent(
           videoUrl
         )}&format=${format}&bitrate=${bitrate}&method=${method}`
       );
@@ -328,7 +329,7 @@ export default function App() {
         <div className="text-center mb-12">
           <div className="flex items-center justify-center mb-4">
             <div className="relative">
-              <Music className="w-12 h-12 text-white mr-3 sm:w-10 h-10" />
+              <Music className="w-12 h-12 text-white mr-3 sm:w-10 sm:h-10" />
               <Sparkles className="w-4 h-4 text-yellow-400 absolute -top-1 -right-1 animate-pulse" />
             </div>
             <h1 className="text-4xl font-black bg-gradient-to-r from-white via-purple-200 to-indigo-200 bg-clip-text text-transparent ">

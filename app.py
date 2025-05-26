@@ -4,11 +4,16 @@ import subprocess
 import json
 import threading
 import time
-from flask import Flask, request, send_file, abort, jsonify, Response
-from flask_cors import CORS
+from flask import Flask, request, send_file, abort, jsonify, Response, send_from_directory
 
-app = Flask(__name__)
-CORS(app)
+BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
+BUILD_DIR = os.path.join(BASE_DIR, "frontend", "MP3Converter", "dist")
+
+app = Flask(
+    __name__,
+    static_folder=BUILD_DIR,    # where your built files live
+    static_url_path=""          # mount them at the webroot
+)
 
 DOWNLOAD_DIR = os.path.join(os.getcwd(), "downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
@@ -278,6 +283,18 @@ def formats():
         "bitrates": list(ALLOWED_BITRATE),
         "methods": ["auto", "fast", "quality", "stream"]
     })
+
+
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_spa(path):
+    # 1) If requesting a real file (e.g. /favicon.ico or /assets/foo.js), serve it
+    file_path = os.path.join(BUILD_DIR, path)
+    if path and os.path.isfile(file_path):
+        return send_from_directory(BUILD_DIR, path)
+
+    # 2) Otherwise, always serve index.html so the client-side router can take over
+    return send_from_directory(BUILD_DIR, "index.html")
 
 
 if __name__ == "__main__":
