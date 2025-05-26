@@ -10,9 +10,15 @@ RUN npm run build   # emits /app/dist
 FROM python:3.11-slim
 
 # install system deps
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends ffmpeg git && \
-    rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    curl \
+    nodejs \
+    npm \
+    && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp \
+    && chmod a+rx /usr/local/bin/yt-dlp \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src/app
 
