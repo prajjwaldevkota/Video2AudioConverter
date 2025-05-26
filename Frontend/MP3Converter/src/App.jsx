@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import ErrorPage from "./errorPage";
 
-const URL = "http://localhost:5000";
+const URL = "https://video2audioconverter.onrender.com";
 
 export default function App() {
   const [userInput, setUserInput] = useState("");
@@ -31,7 +31,7 @@ export default function App() {
 
   // Fetch available formats on component mount
   useEffect(() => {
-    fetch(`/formats`)
+    fetch(`${URL}/formats`)
       .then((res) => {
         if (!res.ok) {
           throw new Error(`HTTP error! status: ${res.status}`);
@@ -58,7 +58,7 @@ export default function App() {
 
     try {
       const response = await fetch(
-        `/search?query=${encodeURIComponent(userInput)}`
+        `${URL}/search?query=${encodeURIComponent(userInput)}`
       );
 
       if (response.status === 404) {
@@ -102,7 +102,7 @@ export default function App() {
 
     try {
       const response = await fetch(
-        `/download?url=${encodeURIComponent(
+        `${URL}/download?url=${encodeURIComponent(
           videoUrl
         )}&format=${format}&bitrate=${bitrate}&method=${method}`
       );
