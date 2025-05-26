@@ -4,63 +4,60 @@ import subprocess
 import json
 import threading
 import time
-from flask import Flask, request, send_file, abort, jsonify, Response, after_this_request
+from flask import Flask, request, send_file, abort, jsonify, Response
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app)
-
-
-def wipe_downloads(delay=1):
-    """Wait `delay` seconds, then remove all files in DOWNLOAD_DIR."""
-    time.sleep(delay)
-    for fname in os.listdir(DOWNLOAD_DIR):
-        path = os.path.join(DOWNLOAD_DIR, fname)
-        try:
-            os.remove(path)
-        except OSError:
-            pass
-
 
 DOWNLOAD_DIR = os.path.join(os.getcwd(), "downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
 ALLOWED_FORMATS = {"mp3", "aac", "alac", "flac", "wav", "ogg"}
 ALLOWED_BITRATE = {"128", "192", "256", "320"}
-
 FAST_FORMATS = {"mp3", "aac"}
 QUALITY_FORMATS = {"alac", "flac", "wav", "ogg"}
 
 
 def sanitize_filename(name: str) -> str:
-    return re.sub(r'[<>:"/\\|?*]', '', name).strip()
+    return re.sub(r'[<>:"/\\|?*]', '', name).strip()[:100]
+
+
+def wipe_downloads(delay=1):
+    time.sleep(delay)
+    for fname in os.listdir(DOWNLOAD_DIR):
+        try:
+            os.remove(os.path.join(DOWNLOAD_DIR, fname))
+        except OSError:
+            pass
 
 
 def get_video_info(youtube_url: str) -> dict:
     proc = subprocess.run(
-        ["yt-dlp", "--dump-json", youtube_url],
+        ["yt-dlp", "--dump-json", "--no-warnings", youtube_url],
         capture_output=True, text=True, check=True
     )
     info = json.loads(proc.stdout)
-    title = sanitize_filename(info.get("title", "audio"))
     return {
-        "title": title,
+        "title": sanitize_filename(info.get("title", "audio")),
         "duration": info.get("duration"),
         "formats": info.get("formats", [])
     }
 
 
-def fast_download_ytdlp(youtube_url: str, audio_format: str, bitrate: str) -> tuple:
+def fast_download_ytdlp(youtube_url: str, audio_format: str, bitrate: str):
     info = get_video_info(youtube_url)
     title = info["title"]
-    # template with .download marker
     raw_template = os.path.join(DOWNLOAD_DIR, f"{title}.download.%(ext)s")
 
     cmd = [
         "yt-dlp",
-        "-f", "bestaudio",
+        "-f", "bestaudio/best",
         "--extract-audio",
         "--audio-format", audio_format,
+        "--no-warnings",
+        "--no-playlist",
+        "--force-overwrites",            # overwrite if exists
         youtube_url,
         "-o", raw_template
     ]
@@ -68,31 +65,36 @@ def fast_download_ytdlp(youtube_url: str, audio_format: str, bitrate: str) -> tu
         cmd += ["--audio-quality", f"{bitrate}K"]
     elif audio_format == "aac":
         cmd += ["--audio-quality", "256K"]
-    subprocess.run(cmd, check=True)
 
-    # find the actual downloaded file
+    subprocess.run(cmd, check=True, timeout=120)
+
+    # locate the downloaded file
     for fn in os.listdir(DOWNLOAD_DIR):
         if fn.startswith(f"{title}.download."):
-            return os.path.join(DOWNLOAD_DIR, fn), title
+            path = os.path.join(DOWNLOAD_DIR, fn)
+            final = os.path.join(DOWNLOAD_DIR, f"{title}.{audio_format}")
+            if path != final:
+                os.replace(path, final)
+            return final, title
 
     raise FileNotFoundError("Fast download: file not found")
 
 
-def quality_download_ffmpeg(youtube_url: str, audio_format: str, bitrate: str) -> tuple:
+def quality_download_ffmpeg(youtube_url: str, audio_format: str, bitrate: str):
     info = get_video_info(youtube_url)
     title = info["title"]
-    # raw download marker
     raw_template = os.path.join(DOWNLOAD_DIR, f"{title}.download.%(ext)s")
 
-    # Step 1: download best-quality audio as m4a
+    # 1) Download best-quality audio
     dl_cmd = [
         "yt-dlp",
         "-f", "bestaudio[ext=m4a]/bestaudio",
         "--no-playlist",
+        "--no-warnings",
         youtube_url,
         "-o", raw_template
     ]
-    subprocess.run(dl_cmd, check=True)
+    subprocess.run(dl_cmd, check=True, timeout=120)
 
     # find raw file
     raw_file = None
@@ -103,8 +105,7 @@ def quality_download_ffmpeg(youtube_url: str, audio_format: str, bitrate: str) -
     if not raw_file:
         raise FileNotFoundError("Quality download: raw file not found")
 
-    # Step 2: convert with FFmpeg
-    # determine final extension
+    # 2) Convert with FFmpeg
     ext_map = {
         "mp3":  "mp3",
         "aac":  "m4a",
@@ -116,34 +117,35 @@ def quality_download_ffmpeg(youtube_url: str, audio_format: str, bitrate: str) -
     final_ext = ext_map[audio_format]
     out_file = os.path.join(DOWNLOAD_DIR, f"{title}.{final_ext}")
 
-    cmd = ["ffmpeg", "-y", "-i", raw_file, "-vn", "-preset", "ultrafast",]
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel", "error",
+        "-y",
+        "-i", raw_file,
+        "-vn"
+    ]
     if audio_format == "mp3":
-        cmd += [
-            "-c:a", "libmp3lame",
-            "-b:a", f"{bitrate}k",
-            "-ar", "44100",
-            "-joint_stereo", "1"
-        ]
+        cmd += ["-c:a", "libmp3lame", "-b:a",
+                f"{bitrate}k", "-ar", "44100", "-ac", "2", "-q:a", "2"]
     elif audio_format == "aac":
-        cmd += [
-            "-c:a", "aac",
-            "-b:a", f"{bitrate}k",
-            "-ar", "44100",
-            "-profile:a", "aac_low"
-        ]
+        cmd += ["-c:a", "aac", "-b:a",
+                f"{bitrate}k", "-ar", "44100", "-ac", "2", "-profile:a", "aac_low"]
     elif audio_format == "alac":
-        cmd += ["-c:a", "alac", "-ar", "44100"]
+        cmd += ["-c:a", "alac", "-ar", "44100", "-ac", "2"]
     elif audio_format == "flac":
-        cmd += ["-c:a", "flac", "-compression_level", "8", "-ar", "44100"]
+        cmd += ["-c:a", "flac", "-compression_level",
+                "8", "-ar", "44100", "-ac", "2"]
     elif audio_format == "wav":
-        cmd += ["-c:a", "pcm_s16le", "-ar", "44100"]
+        cmd += ["-c:a", "pcm_s16le", "-ar", "44100", "-ac", "2"]
     elif audio_format == "ogg":
-        cmd += ["-c:a", "libvorbis", "-b:a", f"{bitrate}k", "-ar", "44100"]
+        cmd += ["-c:a", "libvorbis", "-b:a",
+                f"{bitrate}k", "-ar", "44100", "-ac", "2"]
 
     cmd.append(out_file)
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, timeout=180)
 
-    # remove the raw file immediately
+    # cleanup raw
     os.remove(raw_file)
     return out_file, title
 
@@ -152,8 +154,11 @@ def streaming_download(youtube_url: str, audio_format: str, bitrate: str):
     info = get_video_info(youtube_url)
     title = info["title"]
 
-    yt_cmd = ["yt-dlp", "-f", "bestaudio", youtube_url, "-o", "-"]
-    ff_cmd = ["ffmpeg", "-i", "pipe:0", "-vn"]
+    yt_cmd = ["yt-dlp", "-f", "bestaudio/best",
+              "--no-warnings", youtube_url, "-o", "-"]
+    ff_cmd = ["ffmpeg", "-hide_banner",
+              "-loglevel", "error", "-i", "pipe:0", "-vn"]
+
     if audio_format == "mp3":
         ff_cmd += ["-c:a", "libmp3lame", "-b:a", f"{bitrate}k"]
     elif audio_format == "aac":
@@ -165,10 +170,15 @@ def streaming_download(youtube_url: str, audio_format: str, bitrate: str):
     yt.stdout.close()
 
     def generate():
-        for chunk in iter(lambda: ff.stdout.read(8192), b""):
-            yield chunk
-        ff.wait()
-        yt.wait()
+        try:
+            while True:
+                chunk = ff.stdout.read(16384)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            ff.terminate()
+            yt.terminate()
 
     return generate(), title
 
@@ -180,26 +190,27 @@ def search():
         return abort(400, "Missing query")
     proc = subprocess.run(
         ["yt-dlp",
-            "--ignore-errors",
-            "--dump-json",
-            "--no-playlist",
-            "--flat-playlist",
-            f"ytsearch5:{q}"],
-        capture_output=True, text=True, check=True
+         "--ignore-errors",
+         "--quiet",
+         "--dump-json",
+         "--no-playlist",
+         "--flat-playlist",
+         f"ytsearch8:{q}"],
+        capture_output=True, text=True, check=True, timeout=15
     )
-    out = []
+    results = []
     for line in proc.stdout.splitlines():
         try:
             info = json.loads(line)
         except:
             continue
-        out.append({
+        results.append({
             "title": info.get("title"),
             "url":   info.get("webpage_url"),
-            "thumbnail": info.get("thumbnail")[0].get("url"),
+            "thumbnail": info.get("thumbnails")[0].get("url"),
             "duration":  info.get("duration")
         })
-    return jsonify(out)
+    return jsonify(results)
 
 
 @app.route('/download')
@@ -209,64 +220,54 @@ def download():
     br = request.args.get("bitrate", "320").strip()
     method = request.args.get("method", "auto").strip().lower()
 
-    if not url.startswith("http"):
+    if not url.startswith(("http://", "https://")):
         return abort(400, "Invalid URL")
     if fmt not in ALLOWED_FORMATS:
         return abort(400, "Unsupported format")
-    if fmt == "mp3" and br not in ALLOWED_BITRATE:
+    if fmt in FAST_FORMATS and br not in ALLOWED_BITRATE:
         return abort(400, "Unsupported bitrate")
 
     try:
-        # pick method
         if method == "auto":
             method = "fast" if fmt in FAST_FORMATS else "quality"
 
-        if method == "stream":
+        if method == "stream" and fmt in FAST_FORMATS:
             gen, title = streaming_download(url, fmt, br)
-            mime = {
-                "mp3": "audio/mpeg",
-                "aac": "audio/aac"
-            }.get(fmt, "application/octet-stream")
+            mime = "audio/mpeg" if fmt == "mp3" else "audio/aac"
             return Response(
                 gen(),
                 mimetype=mime,
                 headers={
-                    "Content-Disposition": f"attachment; filename={title}.{fmt}"}
+                    "Content-Disposition": f'attachment; filename="{title}.{fmt}"'}
             )
-
         elif method == "fast":
             file_path, title = fast_download_ytdlp(url, fmt, br)
-
-        else:  # quality
+        else:
             file_path, title = quality_download_ffmpeg(url, fmt, br)
-
-        mime_map = {
-            "mp3": "audio/mpeg",
-            "aac": "audio/aac",
-            "alac": "audio/mp4",
-            "flac": "audio/flac",
-            "wav": "audio/wav",
-            "ogg": "audio/ogg"
-        }
 
         response = send_file(
             file_path,
             as_attachment=True,
-            download_name=f"{title}.{file_path.split('.')[-1]}",
-            mimetype=mime_map.get(fmt, "application/octet-stream")
+            download_name=f"{title}.{file_path.rsplit('.', 1)[1]}",
+            mimetype={
+                "mp3": "audio/mpeg",
+                "aac": "audio/aac",
+                "alac": "audio/mp4",
+                "flac": "audio/flac",
+                "wav": "audio/wav",
+                "ogg": "audio/ogg"
+            }[fmt]
         )
 
-        t = threading.Thread(target=wipe_downloads, args=(1,), daemon=True)
-        t.start()
-
+        threading.Thread(target=wipe_downloads, args=(1,), daemon=True).start()
         return response
 
     except subprocess.CalledProcessError as e:
-        app.logger.error(f"Error: {e}")
-        return abort(500, "Processing error")
+        app.logger.error(f"Processing error: {e}")
+        return abort(500, "Processing failed")
     except Exception as e:
-        app.logger.error(f"Unexpected: {e}")
-        return abort(500, "Unexpected error")
+        app.logger.error(f"Unexpected error: {e}")
+        return abort(500, str(e))
 
 
 @app.route('/formats')
@@ -280,4 +281,4 @@ def formats():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000)
