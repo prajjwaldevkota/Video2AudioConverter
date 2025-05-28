@@ -39,9 +39,8 @@ COPY app.py .
 RUN mkdir -p frontend/MP3Converter/dist
 COPY --from=frontend /app/dist frontend/MP3Converter/dist
 
-# Expose Cloud Run port
-EXPOSE 8080
+EXPOSE 5000
 
-# Bind Gunicorn to the $PORT that Cloud Run provides
-CMD [ "sh", "-c", \
-    "exec gunicorn --bind 0.0.0.0:${PORT:-8080} app:app --workers 2" ]
+# bind to exactly $PORT
+CMD ["sh","-c","exec gunicorn --bind 0.0.0.0:$PORT app:app --workers 2"]
+

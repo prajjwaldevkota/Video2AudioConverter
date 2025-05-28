@@ -7,7 +7,7 @@ import time
 from flask import Flask, request, send_file, abort, jsonify, Response, send_from_directory
 from flask_cors import CORS, cross_origin
 
-BASE_DIR  = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 BUILD_DIR = os.path.join(BASE_DIR, "frontend", "MP3Converter", "dist")
 
 app = Flask(
@@ -16,7 +16,7 @@ app = Flask(
     static_url_path=""          # mount them at the webroot
 )
 
-cors = CORS(app, origins=[ "http://localhost:5173"])
+cors = CORS(app, origins=["http://localhost:5173"])
 
 DOWNLOAD_DIR = os.path.join(os.getcwd(), "downloads")
 os.makedirs(DOWNLOAD_DIR, exist_ok=True)
